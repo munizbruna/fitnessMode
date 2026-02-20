@@ -24,6 +24,7 @@ const auth = getAuth(app);
 const db = getDatabase(app);
 const provider = new GoogleAuthProvider();
 
+// Variáveis locais (usadas como fallback caso o Firebase esteja offline/vazio)
 const EMAIL_AUTORIZADO = "bompatricio@gmail.com"; 
 
 const EXERCISE_TIPS = {
@@ -166,12 +167,19 @@ const WORKOUT_PLAN = {
     }
 };
 
+// Variável para armazenar dados dinâmicos
+window.DYNAMIC_WORKOUT_PLAN = null;
+
+// Função que retorna os treinos (Dinâmicos ou Fallback)
+const getPlan = () => window.DYNAMIC_WORKOUT_PLAN || WORKOUT_PLAN;
+
 let currentWorkoutKey = null;
 
 // --- 3. GESTÃO DE INTERFACE (UI) ---
 
 window.renderHome = function() {
     currentWorkoutKey = null;
+    const PLAN = getPlan();
     const appDiv = document.getElementById('app');
     const today = new Date().getDay(); 
     const schedule = { 1:'1', 2:'2', 3:'3', 4:'4', 5:'5', 6:'6', 0:'7' };
@@ -199,14 +207,14 @@ window.renderHome = function() {
                 </div>
             </div>
 
-            ${todayKey ? `
+            ${todayKey && PLAN[todayKey] ? `
             <div onclick="renderWorkout('${todayKey}')" class="bg-white text-slate-900 p-6 rounded-2xl shadow-xl cursor-pointer active:scale-[0.98] transition-all relative z-10 group">
                 <div class="flex justify-between items-start mb-3">
                     <span class="bg-pink-100 text-pink-700 text-[10px] px-2.5 py-1 rounded-full font-extrabold uppercase tracking-wide">Treino de Hoje</span>
                     <i data-lucide="arrow-right-circle" class="text-slate-300 group-hover:text-pink-500 transition-colors"></i>
                 </div>
-                <h2 class="text-2xl font-black mb-1">${WORKOUT_PLAN[todayKey].title}</h2>
-                <p class="text-sm text-slate-500 font-medium">${WORKOUT_PLAN[todayKey].description}</p>
+                <h2 class="text-2xl font-black mb-1">${PLAN[todayKey].title}</h2>
+                <p class="text-sm text-slate-500 font-medium">${PLAN[todayKey].description}</p>
             </div>
             ` : ''}
         </div>
@@ -215,9 +223,9 @@ window.renderHome = function() {
             <h3 class="font-bold text-slate-400 text-xs uppercase tracking-wider mb-2 pl-2">Biblioteca de Treinos</h3>
     `;
     
-    Object.keys(WORKOUT_PLAN).forEach(key => {
+    Object.keys(PLAN).forEach(key => {
         if (key === todayKey) return;
-        const plan = WORKOUT_PLAN[key];
+        const plan = PLAN[key];
         html += `
             <button onclick="renderWorkout('${key}')" class="w-full bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 text-left active:bg-slate-50 hover:border-pink-200 transition-all">
                 <div class="w-12 h-12 rounded-xl bg-slate-50 text-slate-400 font-bold flex items-center justify-center text-lg border border-slate-100 shadow-inner">${key}</div>
@@ -309,7 +317,8 @@ window.renderProgress = function() {
 
 window.renderWorkout = function(key) {
     currentWorkoutKey = key;
-    const plan = WORKOUT_PLAN[key];
+    const PLAN = getPlan();
+    const plan = PLAN[key];
     const appDiv = document.getElementById('app');
     
     let html = `
@@ -406,7 +415,8 @@ window.openVideoModal = function(startTime = 0) {
     const subtitle = document.getElementById('video-subtitle');
     const segmentsContainer = document.getElementById('video-segments-container');
     
-    const currentPlan = WORKOUT_PLAN[currentWorkoutKey];
+    const PLAN = getPlan();
+    const currentPlan = PLAN[currentWorkoutKey];
     const rawUrl = currentPlan?.videoUrl || '';
     
     let finalUrl = rawUrl;
@@ -490,7 +500,6 @@ let timerInt = null;
 let timerTime = 0;
 let timerTotal = 0;
 
-// Gerador de Bip usando AudioContext
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playBeep(frequency, type, duration) {
     if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -537,21 +546,18 @@ function startTimer() {
     btn.classList.remove('bg-pink-600');
     btn.classList.add('bg-slate-700');
     
-    // Assegura que o contexto de áudio é iniciado com a interação do utilizador
     if (audioCtx.state === 'suspended') audioCtx.resume();
     
     timerInt = setInterval(() => {
         timerTime--;
         updateTimerDisplay();
         
-        // Bipes nos últimos 3 segundos
         if (timerTime > 0 && timerTime <= 3) {
             playBeep(440, 'sine', 200); 
         }
 
         if(timerTime <= 0) {
             clearInterval(timerInt);
-            // Bip longo ao finalizar
             playBeep(880, 'sine', 600); 
             if(navigator.vibrate) navigator.vibrate([200, 100, 200]);
             window.closeTimerModal();
@@ -579,7 +585,7 @@ if(btnReset) {
     };
 }
 
-// --- 6. AUTH & LOGIN ---
+// --- 6. AUTH E SINCRONIZAÇÃO DINÂMICA ---
 
 function renderLoginScreen() {
     const appDiv = document.getElementById('app');
@@ -603,27 +609,72 @@ function renderLoginScreen() {
 
 window.loginPeloGoogle = async () => {
     try {
-        const result = await signInWithPopup(auth, provider);
-        if (result.user.email !== EMAIL_AUTORIZADO) {
-            alert("Acesso negado: Este e-mail não tem permissão.");
-            await signOut(auth);
-            location.reload();
-        }
+        await signInWithPopup(auth, provider);
+        // A verificação de permissão agora é gerida automaticamente pelo onAuthStateChanged
     } catch (error) {
         console.error("Erro no login:", error);
     }
 };
 
-onAuthStateChanged(auth, (user) => {
-    if (user && user.email === EMAIL_AUTORIZADO) {
-        console.log("Acesso concedido para:", user.email);
-        syncDataFromFirebase().then(() => {
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+        let isAllowed = false;
+
+        // 1. Verifica no Firebase a lista de E-mails Autorizados
+        try {
+            const snapEmails = await get(ref(db, 'system/allowed_emails'));
+            if (snapEmails.exists()) {
+                const emails = snapEmails.val();
+                const emailList = Array.isArray(emails) ? emails : Object.values(emails);
+                isAllowed = emailList.includes(user.email);
+            } else {
+                // Se o nó ainda não existe no Firebase, usa o e-mail local
+                isAllowed = (user.email === EMAIL_AUTORIZADO);
+            }
+        } catch (e) {
+            isAllowed = (user.email === EMAIL_AUTORIZADO);
+        }
+
+        if (isAllowed) {
+            console.log("Acesso concedido para:", user.email);
+            
+            // 2. Tenta buscar o Workout Plan do Firebase
+            try {
+                const snapPlan = await get(ref(db, 'system/workout_plan'));
+                if (snapPlan.exists()) {
+                    window.DYNAMIC_WORKOUT_PLAN = snapPlan.val();
+                    console.log("Treinos carregados do banco de dados.");
+                }
+            } catch (e) {
+                console.log("Usando treinos locais (Fallback).");
+            }
+
+            // 3. Sincroniza dados do usuário
+            await syncDataFromFirebase();
+            
             if (window.renderHome) window.renderHome();
-        });
+        } else {
+            alert("Acesso negado: Este e-mail não tem permissão.");
+            await signOut(auth);
+            renderLoginScreen();
+        }
     } else {
         renderLoginScreen();
     }
 });
+
+// FUNÇÃO DE UTILIDADE (Executar uma vez no Console do Navegador para migrar os dados)
+window.seedDatabase = async () => {
+    const user = auth.currentUser;
+    if(!user) return alert("Faça login primeiro.");
+    try {
+        await set(ref(db, 'system/allowed_emails'), [EMAIL_AUTORIZADO]);
+        await set(ref(db, 'system/workout_plan'), WORKOUT_PLAN);
+        alert("Base de dados migrada para o Firebase com sucesso!");
+    } catch(e) {
+        alert("Erro ao migrar base de dados: " + e.message);
+    }
+}
 
 // --- 7. PERSISTÊNCIA DE DADOS ---
 
@@ -649,7 +700,6 @@ window.saveExerciseData = async (exId, data) => {
         historyData[dateKey][exId] = updated;
         localStorage.setItem('gym_history', JSON.stringify(historyData));
 
-        console.log(`Dados salvos: ${exId}`);
     } catch (error) {
         console.error("Erro ao salvar no Firebase:", error);
     }
@@ -684,7 +734,6 @@ async function syncDataFromFirebase() {
             localStorage.setItem('gym_history', JSON.stringify(histSnapshot.val()));
         }
         
-        console.log("Sincronização completa.");
     } catch (error) {
         console.error("Erro na sincronização:", error);
     }
