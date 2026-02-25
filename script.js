@@ -137,9 +137,10 @@ const WORKOUT_PLAN = {
     5: {
         title: "Treino 5: Pirâmide",
         description: "Reps 20-16-12-8",
-        videoUrl: "https://d21d.blob.core.windows.net/treinos/treino05.mp4",
+        videoUrl: "https://youtu.be/E28lQUFDOrw?si=-j4wK69SDKjVxoxi&t=1300",
         exercises: [
-            { id: 't5_main', type: 'single', title: 'Série Gigante', summary: 'Resumo pendente de análise do vídeo.', items: [{ name: 'Agachamento Sumô', details: 'Descrescente' }, { name: 'Leg Press', details: 'Descrescente' }, { name: 'Panturrilha', details: 'Descrescente' }, { name: 'Agachamento Iso', details: '20 seg fim' }], restTime: 60, specialAction: { label: 'Ver Explicação (00:00)', time: 0 } },
+             { id: 't5_aq', type: 'single', title: 'Aquecimento', summary: '4x 20 segundos cada perna + 10 seg de descanso entre eles', items: [{ name: 'Stiff Unilateral', details: '20s cada perna' }, { name: 'Agachamento Lateral', details: '20s cada lado' }], restTime: 0, specialAction: { label: 'Ver Explicação (00:00)', time: 0 } },
+            { id: 't5_main', type: 'single', title: 'Série Gigante', summary: '20x cada movimento + 20seg de agachamento na isometria; 16x cada movimento + 20seg de agachamento na isometria; 12x cada movimento + 20seg de agachamento na isometria; 8x cada movimento + 20seg de agachamento na isometria', items: [{ name: 'Agachamento Sumô', details: 'Descrescente' }, { name: 'Leg Press', details: 'Descrescente' }, { name: 'Panturrilha', details: 'Descrescente' }, { name: 'Agachamento Iso', details: '20 seg fim' }], restTime: 60, specialAction: { label: 'Ver Explicação (00:00)', time: 0 } },
             { id: 't5_fim', type: 'single', title: 'Cardio', summary: 'Resumo pendente de análise do vídeo.', items: [{ name: 'Intervalado 10min', details: '1min Forte/Leve' }], restTime: 0, specialAction: { label: 'Ver Explicação (00:00)', time: 0 } }
         ]
     },
